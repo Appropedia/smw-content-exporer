@@ -1,0 +1,2 @@
+#Files here are just for demonstration purposes - prevent access if using Apache
+Require all denied

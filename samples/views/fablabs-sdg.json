@@ -1,0 +1,21 @@
+{
+  "template": "two-panel-view.html",
+  "css": "two-panel-view.css",
+  "api": "https://www.appropedia.org/w/api.php",
+  "search_conditions": "[[Category:Fab_lab_profile]]",
+  "user_filters": {
+    "Page SDG": {
+      "first_word_labels": true,
+      "show_every_allowed_value": true
+    }
+  },
+  "printouts": {
+    "Page location": {},
+    "Page SDG": {
+      "first_word_labels": true
+    }
+  },
+  "labels": {
+    "title": "Fablabs by Sustainable Development Goals"
+  }
+}

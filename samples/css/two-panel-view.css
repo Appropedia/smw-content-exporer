@@ -1,16 +1,25 @@
 body {
   font-family: system-ui;
   font-size: 14px;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 8px;
 }
 
 div.panel_container {
   display: flex;
+  min-height: 0;
 }
 
 div.panel_container div.left_panel {
   flex: 1;
   border-top: 1px solid #E0E0E0;
   border-right: 1px solid #E0E0E0;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 div.panel_container div.right_panel {
@@ -20,9 +29,11 @@ div.panel_container div.right_panel {
   padding: 10px;
   border-top: 1px solid #E0E0E0;
   gap: 10px;
+  min-height: 0;
+  overflow-y: auto;
 }
 
-div.left_panel div.filter_container {
+div.left_panel div.smwce_filter_container {
   display: flex;
   flex-direction: column;
   border-bottom: 1px solid #E0E0E0;
@@ -30,34 +41,34 @@ div.left_panel div.filter_container {
   gap: 10px;
 }
 
-div.filter_container div.filter_title {
+div.smwce_filter_container div.smwce_filter_title {
 }
 
-div.filter_container div.filter_grid {
+div.smwce_filter_container div.smwce_filter_grid {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
 }
 
-div.filter_grid div.filter_button {
+div.smwce_filter_grid div.smwce_filter_button {
   border: 1px solid #C0C0C0;
   padding: 2px;
   cursor: pointer;
 }
 
-div.filter_grid div.filter_button.active {
+div.smwce_filter_grid div.smwce_filter_button.active {
   background-color: #000000;
   color: #FFFFFF;
 }
 
-div.right_panel div.result_container {
+div.right_panel div.smwce_result_container {
   border: 1px solid #E0E0E0;
   padding: 10px;
 }
 
-div.result_container div.page_title {
+div.smwce_result_container div.smwce_page_title {
 }
 
-div.result_container div.page_property {
+div.smwce_result_container div.smwce_page_property {
   color: #505050;
 }
