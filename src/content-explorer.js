@@ -71,13 +71,13 @@ async function render_view(view_name) {
     document.getElementById(id).innerHTML = html;
   }
 
-  //Initialize the user filter container
-  initialize_filters(document.getElementById('smwce_user_filter_area'), view.user_filters,
-                     filter_values);
-
   //Initialize the results container
   initialize_results(document.getElementById('smwce_results_area'), view.printouts,
                      view.user_filters, page_data);
+
+  //Initialize the user filter container
+  initialize_filters(document.getElementById('smwce_user_filter_area'), view.user_filters,
+                     view.filter_merge_operation, filter_values);
 }
 
 //Load all HTML template fragments and CSS files for a given view

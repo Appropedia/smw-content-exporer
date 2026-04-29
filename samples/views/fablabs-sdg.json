@@ -6,9 +6,12 @@
   "user_filters": {
     "Page SDG": {
       "first_word_labels": true,
-      "show_every_allowed_value": true
+      "show_every_allowed_value": true,
+      "single_selection": false,
+      "merge_operation": "conjunction"
     }
   },
+  "filter_merge_operation": "conjunction",
   "printouts": {
     "Page location": {},
     "Page SDG": {

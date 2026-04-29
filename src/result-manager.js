@@ -8,6 +8,7 @@ export function initialize_results(parent_element, printouts, user_filters, page
     //Create a new div container for each result
     const result_container = document.createElement('div');
     result_container.className = 'smwce_result_container';
+    result_container.hidden = true;
 
     //Add the page title
     const page_title_div = document.createElement('div');
@@ -83,31 +84,44 @@ export function initialize_results(parent_element, printouts, user_filters, page
   }
 }
 
+//Check whether the given semantic property values of a page satisfy the given filter values
+function check_values(value_merge_op, filter_values, property_values) {
+  switch (value_merge_op) {
+    case 'conjunction':
+      return filter_values.every(prop_value => property_values.includes(prop_value));
+    case 'disjunction':
+      return filter_values.some(prop_value => property_values.includes(prop_value));
+  }
+}
+
+//Check whether the given semantic properties of a page satisfy the given filter conditions
+function check_filters(filter_merge_op, filters, page_properties) {
+  switch (filter_merge_op) {
+    case 'conjunction':
+      return Object.keys(filters).every(prop_name => check_values(filters[prop_name].value_merge_op,
+                                                                  filters[prop_name].values,
+                                                                  page_properties[prop_name]));
+    case 'disjunction':
+      return Object.keys(filters).some(prop_name => check_values(filters[prop_name].value_merge_op,
+                                                                 filters[prop_name].values,
+                                                                 page_properties[prop_name]));
+  }
+}
+
 //Update the web page by applying all active filters to the result set
-export function filter_results(filter_state) {
-  //Start with a full set of filtered results by creating a copy
-  let filtered_result_set = [...all_results];
-
-  //Iterate through every property in the filter state
-  for (const [prop_name, filters_by_value] of Object.entries(filter_state)) {
-    //Iterate through every property value as well
-    for (const [prop_value, filter] of Object.entries(filters_by_value)) {
-      //Check if the filter is active
-      if (filter.active) {
-        //Filter the results by excluding those that don't include the property value
-        filtered_result_set = filtered_result_set.filter(result => {
-          if (!result.properties[prop_name].includes(prop_value)) {
-            result.element.hidden = true;
-            return false;
-          }
-          return true;
-        });
-      }
-    }
+export function filter_results(filter_state, filter_merge_op) {
+  //Create an array of objects that contains the names, value merge operations and values of all
+  //properties with active filters
+  const active_filters = {};
+  for (const [prop_name, fs_item] of Object.entries(filter_state)) {
+    active_filters[prop_name] = {
+      value_merge_op: fs_item.value_merge_op,
+      values: Object.keys(fs_item.values).filter(prop_value => fs_item.values[prop_value].active),
+    };
   }
 
-  //Iterate through the remaining results and show them
-  for (const result of filtered_result_set) {
-    result.element.hidden = false;
-  }
+  //Filter all result pages by hiding/revealing them based on active filter conditions
+  for (const page of all_results) {
+    page.element.hidden = !check_filters(filter_merge_op, active_filters, page.properties);
+  };
 }
