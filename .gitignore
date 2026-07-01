@@ -1,0 +1,7 @@
+#Default deployment directory
+dist
+
+#Local npm files
+package.json
+package-lock.json
+node_modules
