@@ -1,15 +1,11 @@
 {
-  "template": "two-panel-view.html",
-  "css": "two-panel-view.css",
+  "template": "tissues-explorer.html",
+  "css": "tissues-explorer.css",
   "api": "https://www.appropedia.org/w/api.php",
-  "labels": {
-    "title": "Tissues explorer"
-  },
   "search_conditions": "[[category:TDB tissues]][[Page language::en]]",
-  "user_filters": {
+  "filters": {
     "Page keywords": {}
   },
-  "printouts": {
-    "Page description": {}
-  }
+  "filter_merge_operation": "disjunction",
+  "printouts": [ "Page description" ]
 }

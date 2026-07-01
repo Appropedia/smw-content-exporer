@@ -1,14 +1,16 @@
 {
   "template": "content-index.html",
   "css": "content-index.css",
-  "contents": [
-    {
-      "link_label": "Fablabs by Sustainable Development Goals",
-      "view": "fablabs-sdg.json"
-    },
-    {
-      "link_label": "Tissues explorer",
-      "view": "tissues-explorer.json"
-    }
-  ]
+  "parameters": {
+    "topic_index": [
+      {
+        "link_label": "Fablabs by Sustainable Development Goals",
+        "view": "fablabs-sdg.json"
+      },
+      {
+        "link_label": "Tissues explorer",
+        "view": "tissues-explorer.json"
+      }
+    ]
+  }
 }

@@ -1,0 +1,45 @@
+<h1>Fablabs by Sustainable Development Goals</h1>
+
+<div class="panel_container">
+  <div class="left_panel">
+    {% for property_name, property_value in filter_properties %}
+      <div class="filter_container">
+        <div class="filter_title">
+          {{ property_name }}
+        </div>
+        <div class="filter_grid">
+          {% for value in property_value %}
+            <div class="filter_button"
+             onclick="filter_toggle({{ property_name }}, {{ value }}, this, 'active')">
+              {{ value }}
+            </div>
+          {% end %}
+        </div>
+      </div>
+    {% end %}
+  </div>
+  <div class="right_panel">
+    {% for page_title, properties in results %}
+      <div class="result_container" data-page-title = "{{ page_title }}">
+        <div class="page_title">
+          <a href="{{ properties['fullurl'] }}">{{ page_title }}</a>
+        </div>
+        <div class="page_property">
+          Page location:
+          {% for location in properties['printouts']['Page location'] %}
+            {{ location }}
+          {% end %}
+        </div>
+        <div class="page_property">
+          Page SDG:
+          {% for sdg in properties['printouts']['Page SDG'] %}
+            <a href="{{ sdg['fullurl'] }}">{{ split(sdg['fulltext'])[0] }}</a>
+          {% end %}
+        </div>
+      </div>
+    {% end %}
+    <div data-show-when-results-empty>
+      No results
+    </div>
+  </div>
+</div>
