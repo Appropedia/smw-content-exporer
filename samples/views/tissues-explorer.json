@@ -2,10 +2,17 @@
   "template": "tissues-explorer.html",
   "css": "tissues-explorer.css",
   "api": "https://www.appropedia.org/w/api.php",
-  "search_conditions": "[[category:TDB tissues]][[Page language::en]]",
-  "filters": {
-    "Page keywords": {}
+  "globals": {
+    "pages": {
+      "semantic_search": "[[~TissueDB/Tissues/*]]",
+      "printouts": [ "Page description", "Page keywords" ]
+    },
+    "properties": {
+      "printout_value_set": "pages",
+      "printouts": "Page keywords"
+    }
   },
-  "filter_merge_operation": "disjunction",
-  "printouts": [ "Page description" ]
+  "filters": {
+    "global_merge_operation": "disjunction"
+  }
 }

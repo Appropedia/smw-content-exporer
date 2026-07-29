@@ -1,10 +1,4 @@
-//Custom error class for templates
-export class TemplateError extends Error {
-  constructor(location, message) {
-    super(`${location}: error: ${message}`);
-    this.name = 'TemplateError';
-  }
-}
+import { LexicalError, ParseError } from './errors.js';
 
 //Lexical analyzer for templates
 export class LexicalAnalyzer {
@@ -34,8 +28,8 @@ export class LexicalAnalyzer {
       //Handle end of input
       if (done) {
         if (token_description !== undefined) {
-          throw new TemplateError(this.#tok_gen_location(), `expected ${token_description} but ` +
-                                  'encountered end of template instead');
+          throw new ParseError(this.#tok_gen_location(), `expected ${token_description} but ` +
+                               'encountered end of template instead');
         }
         else {
           return undefined;
@@ -69,8 +63,8 @@ export class LexicalAnalyzer {
       //Handle end of input
       if (done) {
         const description = expected_value !== undefined? `"${expected_value}"`: 'a token';
-        throw new TemplateError(this.#tok_gen_location(),
-                                `expected ${description} but encountered end of template instead`);
+        throw new ParseError(this.#tok_gen_location(),
+                             `expected ${description} but encountered end of template instead`);
       }
 
       next_token = token;
@@ -78,14 +72,14 @@ export class LexicalAnalyzer {
 
     //Optionally check the value and throw an error on a mismatch
     if (expected_value !== undefined && next_token.value !== expected_value) {
-      throw new TemplateError(next_token.location, `expected "${expected_value}" but encountered ` +
-                              `"${next_token.value}" instead`);
+      throw new ParseError(next_token.location, `expected "${expected_value}" but encountered ` +
+                           `"${next_token.value}" instead`);
     }
   }
 
   //Format the current token generator location as a string
   #tok_gen_location() {
-    return `${this.#unit_name}:${this.#current_line}:${this.#current_column}`;
+    return { unit_name: this.#unit_name, line: this.#current_line, column: this.#current_column };
   }
 
   //Internal function used to generate tokens from the input text
@@ -108,7 +102,7 @@ export class LexicalAnalyzer {
         ['word', '[a-zA-Z_][a-zA-Z_0-9]*'],                                   //Keyword/identifier
         ['number', '(?:[0-9]+(?:\\.[0-9]+)?|\\.[0-9]+)(?:[eE][-+]?[0-9]+)?'], //Number literal
         ['string_literal', '[\'"]'],                                          //String literal
-        ['special', '[\\[\\]\\(\\),]'],                                       //Special characters
+        ['special', '[\\[\\]\\(\\),=]'],                                      //Special characters
         ['delimiter_brace', '{%|%}|{{|}}'],                                   //Any deliminter brace
         ['space', '\\s+'],                                                    //Whitespace
         ['invalid', '.'],                                                     //Any other character
@@ -170,11 +164,12 @@ export class LexicalAnalyzer {
             case '%}':
             case '}}':
               //Closing brace found during wrong state
-              throw new TemplateError(this.#tok_gen_location(),
-                                      `closing "${match[0]}" without matching opening brace`);
+              throw new ParseError(this.#tok_gen_location(),
+                                   `closing "${match[0]}" without matching opening brace`);
             default:
               //Comment found - yield it directly
               yield { value: match[0], location: this.#tok_gen_location() };
+              this.#count_lines_and_columns(match[0]);
               break;
           }
 
@@ -208,8 +203,8 @@ export class LexicalAnalyzer {
               //Note: Digits are consumed greedily by the initial regular expression for numbers,
               //but they are also included here in case they come after a non-digit character
               if (match !== null) {
-                throw new TemplateError(this.#tok_gen_location(),
-                                        `trailing "${match[0]}" after number literal`);
+                throw new LexicalError(this.#tok_gen_location(),
+                                       `trailing "${match[0]}" after number literal`);
               }
 
               yield { value: value, location: this.#tok_gen_location() };
@@ -232,8 +227,7 @@ export class LexicalAnalyzer {
               }
               else {
                 //Wrong opening/closing brace found during wrong state
-                throw new TemplateError(this.#tok_gen_location(),
-                                        `unexpected "${value}" brace found`);
+                throw new ParseError(this.#tok_gen_location(), `unexpected "${value}" brace found`);
               }
               break;
             case 'space':
@@ -241,7 +235,7 @@ export class LexicalAnalyzer {
               this.#count_lines_and_columns(value);
               break;
             case 'invalid':
-              throw new TemplateError(this.#tok_gen_location(), `unexpected "${value}" found`);
+              throw new LexicalError(this.#tok_gen_location(), `unexpected "${value}" found`);
           }
 
           //Store the last position of the regex in preparation for the next iteration/state
@@ -256,7 +250,7 @@ export class LexicalAnalyzer {
 
           if (match === null) {
             //No matching closing quote found
-            throw new TemplateError(this.#tok_gen_location(), 'unterminated string literal');
+            throw new LexicalError(this.#tok_gen_location(), 'unterminated string literal');
           }
 
           //Get the raw string text (if any) before the next match

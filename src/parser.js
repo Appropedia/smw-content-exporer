@@ -1,4 +1,5 @@
-import { LexicalAnalyzer, TemplateError } from './lexical-analyzer.js';
+import { LexicalAnalyzer } from './lexical-analyzer.js';
+import { ParseError } from './errors.js';
 
 //Parser for the template language
 export class Parser {
@@ -22,9 +23,12 @@ export class Parser {
   //                       | <raw_text_element>
   //
   //  <statement_element> ::= <include_statement>
+  //                       |  <set_statement>
   //                       |  <for_statement>
   //
   //  <include_statement> ::= {% include <expression> %}
+  //
+  //  <set_statement> ::= {% set <identifier> = <expression> %}
   //
   //  <for_statement> ::= <for_delimiter> <template> <end_delimiter>
   //
@@ -120,7 +124,10 @@ export class Parser {
         return this.#parse_expression_element();
       default:
         this.#lexer.consume();
-        return { type: 'raw_text_element', raw_text: token.value };
+        return {
+          type: 'raw_text_element',
+          raw_text: token.value,
+        };
     }
   }
 
@@ -130,6 +137,7 @@ export class Parser {
   //  symbol (e.g. "for" is finished by "end")
   //BNF:
   //  <statement_element> ::= <include_statement>
+  //                       |  <set_statement>
   //                       |  <for_statement>
   #parse_statement_element(closing_tokens) {
     //This is a LL(2) parser, look at the second token that follows to check which statement comes
@@ -139,6 +147,8 @@ export class Parser {
     switch (token.value) {
       case 'include':
         return this.#parse_include_statement();
+      case 'set':
+        return this.#parse_set_statement();
       case 'for':
         return this.#parse_for_statement();
       default:
@@ -151,10 +161,9 @@ export class Parser {
           //Not a valid closing token, check for known keywords
           switch (token.value) {
             case 'end':
-              throw new TemplateError(token.location, `stray "${token.value}" found`);
+              throw new ParseError(token.location, `stray "${token.value}" found`);
             default:
-              throw new TemplateError(token.location, 'invalid statement keyword: ' +
-                                      `"${token.value}"`);
+              throw new ParseError(token.location, `invalid statement keyword: "${token.value}"`);
           }
         }
     }
@@ -174,6 +183,24 @@ export class Parser {
       type: 'include_statement',
       location: location,
       unit_name: unit_name,
+    };
+  }
+
+  //Parse a <set_statement> nonterminal symbol
+  //BNF:
+  //  <set_statement> ::= {% set <identifier> = <expression> %}
+  #parse_set_statement() {
+    this.#lexer.consume('{%');
+    this.#lexer.consume('set');
+    const identifier = this.#parse_identifier();
+    this.#lexer.consume('=');
+    const expression = this.#parse_expression();
+    this.#lexer.consume('%}');
+
+    return {
+      type: 'set_statement',
+      identifier: identifier,
+      expression: expression,
     };
   }
 
@@ -367,8 +394,8 @@ export class Parser {
         this.#lexer.consume('"');
         break;
       default:
-        throw new TemplateError(token.location,
-                                `expected string literal but found "${token.value}" instead`);
+        throw new ParseError(token.location,
+                             `expected string literal but found "${token.value}" instead`);
     }
 
     return {
@@ -383,9 +410,9 @@ export class Parser {
 
     //Make sure the identifier uses the correct characters
     if (!/^[a-zA-Z_][a-zA-Z_0-9]*$/.test(token.value)) {
-      throw new TemplateError(token.location, `invalid identifier: "${token.value}" - must only ` +
-                              'contain letters, numbers and underscores and cannot start with a ' +
-                              'number');
+      throw new ParseError(token.location, `invalid identifier: "${token.value}" - must only ` +
+                           'contain letters, numbers and underscores and cannot start with a ' +
+                           'number');
     }
 
     this.#lexer.consume();

@@ -2,13 +2,21 @@
   "template": "fablabs-sdg.html",
   "css": "fablabs-sdg.css",
   "api": "https://www.appropedia.org/w/api.php",
-  "search_conditions": "[[Category:Fab_lab_profile]]",
-  "filters": {
-    "Page SDG": {
-      "show_every_allowed_value": true,
-      "merge_operation": "conjunction"
+  "globals": {
+    "pages": {
+      "semantic_search": "[[Category:Fab_lab_profile]]",
+      "printouts": [ "Page SDG", "Page location" ],
+      "parameters": "limit=50"
+    },
+    "properties": {
+      "semantic_search": "[[Property:Page SDG]]",
+      "printouts": "Allows value"
     }
   },
-  "filter_merge_operation": "conjunction",
-  "printouts": [ "Page location", "Page SDG" ]
+  "filters": {
+    "global_merge_operation": "conjunction",
+    "individual_merge_operation": {
+      "Page SDG": "conjunction"
+    }
+  }
 }

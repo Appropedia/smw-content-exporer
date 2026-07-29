@@ -1,4 +1,4 @@
-import { TemplateError } from './lexical-analyzer.js';
+import { TemplateError, EvaluationError, ScopeError, IncludeError } from './errors.js';
 import { create_value } from './template-value.js';
 import { Parser } from './parser.js';
 import { TemplateBuilder } from './template-builder.js';
@@ -21,7 +21,7 @@ class Scope {
   }
 
   //Get any variable visible from the current scope
-  get(name, location) {
+  get(name) {
     //Look in the local scope and return the variable if found
     if (Object.hasOwn(this.#record, name)) {
       return this.#record[name];
@@ -29,10 +29,10 @@ class Scope {
 
     //Look in the parent scope otherwise
     if (this.#parent !== null) {
-      return this.#parent.get(name, location);
+      return this.#parent.get(name);
     }
 
-    throw new TemplateError(location, `identifier "${name}" is not available in current scope`);
+    throw new ScopeError(`identifier "${name}" is not available in current scope`);
   }
 
   //Set a variable in the local scope
@@ -66,17 +66,17 @@ const evaluator = {
 
     //Make sure the unit name was correctly evaluated to a string
     if (expr_type !== 'string') {
-      throw new TemplateError(statement.location, `cannot include units using ${expr_type} values`);
+      throw new IncludeError(`cannot include units using ${expr_type} values`);
     }
 
     //Make sure the template is defined in the view
     if (!Object.hasOwn(templates, unit_name)) {
-      throw new TemplateError(statement.location, `template "${unit_name}" not defined in view`);
+      throw new IncludeError(`template "${unit_name}" not defined in view`);
     }
 
     //Also make sure the template isn't in the template stack
     if (template_stack.includes(unit_name)) {
-      throw new TemplateError(statement.location, 'recursive template expansion is not supported');
+      throw new IncludeError('recursive template expansion is not supported');
     }
 
     //Parse the template and store the resulting AST if it hasn't been parsed before
@@ -92,6 +92,17 @@ const evaluator = {
     return result;
   },
 
+  //Evaluate a <set_statement> AST object
+  set_statement(statement, scope) {
+    //Evaluate the expression first
+    const value = evaluate(statement.expression, scope);
+
+    //Set the identifier in the current scope
+    scope.set(statement.identifier.name, value);
+
+    return '';  //This is an internal logic operation with no output
+  },
+
   //Evaluate a <for_statement> AST object
   for_statement(statement, scope) {
     //Evaluate the iterable first
@@ -103,7 +114,7 @@ const evaluator = {
     //Evaluate the for statement based on the presence of the second loop variable
     if (!Object.hasOwn(statement, 'loop_var_2')) {
       //Single variable loop - Iterate and concatenate all iteration results into a single string
-      return iterable.iterate(statement.location, 1).reduce((accumulator, loop_v1) => {
+      return iterable.iterate(1).reduce((accumulator, loop_v1) => {
         //Set the loop variable in the child scope
         child_scope.set(statement.loop_var.name, loop_v1);
 
@@ -113,7 +124,7 @@ const evaluator = {
     }
     else {
       //Dual variable loop
-      return iterable.iterate(statement.location, 2).reduce((accumulator, [loop_v1, loop_v2]) => {
+      return iterable.iterate(2).reduce((accumulator, [loop_v1, loop_v2]) => {
         //Set the loop variables in the child scope
         child_scope.set(statement.loop_var.name, loop_v1);
         child_scope.set(statement.loop_var_2.name, loop_v2);
@@ -141,14 +152,13 @@ const evaluator = {
       case '[]':
         lhs = evaluate(expression.lhs, scope);
         rhs = evaluate(expression.rhs, scope);
-        return lhs.subscript_access(expression.location, rhs);
+        return lhs.subscript_access(rhs);
       case '()':
         lhs = evaluate(expression.lhs, scope);
         rhs = expression.rhs.map(v => evaluate(v, scope));
-        return lhs.call(expression.location, rhs);
+        return lhs.call(...rhs);
       default:
-        throw new TemplateError(expression.location,
-                                `operator "${expression.operator}" not implemented`);
+        throw new EvaluationError(`operator "${expression.operator}" not implemented`);
     }
   },
 
@@ -159,7 +169,7 @@ const evaluator = {
 
   //Evaluate an <identifier> AST object
   identifier(identifier, scope) {
-    return scope.get(identifier.name, identifier.location);
+    return scope.get(identifier.name);
   },
 
   //Evaluate a <number_literal> AST object
@@ -169,19 +179,31 @@ const evaluator = {
 };
 
 //Evaluate an AST object using the given scope
-function evaluate(ast, scope) {
+function evaluate(ast_object, scope) {
   //Make sure there's an evaluator for the given AST object
-  if (!Object.hasOwn(evaluator, ast.type)) {
-    throw new Error(`No AST evaluator available for "${ast.type}" nodes`);
+  if (!Object.hasOwn(evaluator, ast_object.type)) {
+    throw new Error(`No AST evaluator available for "${ast_object.type}" nodes`);
   }
 
-  //Look up the evaluator and call it
-  return evaluator[ast.type](ast, scope);
+  try {
+    //Look up the evaluator and call it
+    return evaluator[ast_object.type](ast_object, scope);
+  }
+  catch (error) {
+    if (error instanceof EvaluationError) {
+      //Add location information to any evaluation error
+      throw new TemplateError(ast_object.location, error);
+    }
+    else {
+      //Any other type of error has location information already or is unexpected - let it propagate
+      throw error;
+    }
+  }
 }
 
 //Evaluate a new set of templates starting from the root unit name using the given global scope
 //variables
-export function evaluate_templates(new_templates, root, globals) {
+export function evaluate_templates(new_templates, root_template, globals) {
   //Register all new templates locally
   Object.assign(templates, new_templates);
 
@@ -191,9 +213,8 @@ export function evaluate_templates(new_templates, root, globals) {
     {
       unit_name: {
         type: 'string_literal',
-        value: root,
+        value: root_template,
       },
-      location: 'root',
     },
     null,
     globals

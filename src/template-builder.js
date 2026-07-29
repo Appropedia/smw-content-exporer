@@ -1,4 +1,4 @@
-import { TemplateError } from './lexical-analyzer.js';
+import { TemplateBuildError } from './errors.js';
 
 //Strings and regular expressions for creation and parsing of untrusted value tokens
 const token_prefix = '__SMWCE_';
@@ -9,8 +9,8 @@ const token_match_regex = /^__SMWCE_([0-9]+)__$/;
 //List of DOM element attributes for which code expansion is allowed
 const code_attribute_whitelist = new Set(['onclick']);
 
-//List of DOM element attributes for which free-form expansion is allowed
-const safe_attribtue_whitelist = new Set(['data-page-title']);
+//List of DOM element attributes for which JSON data expansion is allowed
+const json_attribute_whitelist = new Set(['data-filter-properties']);
 
 //Append an arbitrary amount of DOM nodes to an array, merging contigous text nodes in the process
 function append_merge_nodes(node_array, ...new_nodes) {
@@ -67,7 +67,7 @@ function nodes_from_value(location, value, quote_strings = false) {
         return [ document.createTextNode('{'), ul, document.createTextNode('}') ];
       }
       else {
-        throw new TemplateError(location, `displaying of insecure objects is not allowed`);
+        throw new TemplateBuildError(location, `displaying of insecure objects is not allowed`);
       }
     default:
       throw new Error(`Invalid type passed to function: ${typeof value}`);
@@ -191,8 +191,8 @@ export class TemplateBuilder {
               attribute.value = attribute.value.replaceAll(token_repl_regex, (_match, id) => {
                 const { type, location, value } = this.#value_info_map.get(+id);
                 if (!['number', 'string'].includes(type)) {
-                  throw new TemplateError(location, `wrong type for ${attribute.name} attribute: ` +
-                                          `${type} (should be string or number)`);
+                  throw new TemplateBuildError(location, `wrong type for ${attribute.name} ` +
+                                               `attribute: ${type} (should be string or number)`);
                 }
                 //Note: At the moment of writing there was no need of allowing types other than the
                 //basic ones, so they're restricted for added security. There's also a potential
@@ -201,15 +201,12 @@ export class TemplateBuilder {
                 return JSON.stringify(value);
               });
             }
-            else if (safe_attribtue_whitelist.has(attribute.name)) {
-              //Expand untrusted value tokens directly for attributes that are considered safe
+            else if (json_attribute_whitelist.has(attribute.name)) {
+              //Expand untrusted value tokens in allowed JSON data attributes by serializing them
+              //in order to disallow escape sequences leading to XSS
               attribute.value = attribute.value.replaceAll(token_repl_regex, (_match, id) => {
-                const { type, location, value } = this.#value_info_map.get(+id);
-                if (!['number', 'string'].includes(type)) {
-                  throw new TemplateError(location, `wrong type for ${attribute.name} attribute: ` +
-                                          `${type} (should be string or number)`);
-                }
-                return value;
+                const { value } = this.#value_info_map.get(+id);
+                return JSON.stringify(value);
               });
             }
           }
@@ -265,7 +262,7 @@ export class TemplateBuilder {
           break;
         default:
           //Other types are disallowed
-          throw new TemplateError(location, `displaying of ${type} type is unsupported`);
+          throw new TemplateBuildError(location, `displaying of ${type} type is unsupported`);
       }
 
       //Create one or mode nodes from the current untrusted value, then append/merge them
@@ -294,8 +291,8 @@ export class TemplateBuilder {
 
       //Make sure the value is a string
       if (type !== 'string') {
-        throw new TemplateError(location, `wrong type for URL expression: ${type} (should be ` +
-                                'string)');
+        throw new TemplateBuildError(location, `wrong type for URL expression: ${type} (should ` +
+                                     'be string)');
       }
 
       //Create a clean version of the value by removing all leading/trailing whitespace and
@@ -333,8 +330,8 @@ export class TemplateBuilder {
         const expanded_key = k.replaceAll(token_repl_regex, (_match, id) => {
           const { type, location, value } = this.#value_info_map.get(+id);
           if (type !== 'string') {
-            throw new TemplateError(location, `wrong type for URL parameter key: ${type} (should ` +
-                                    'be string)');
+            throw new TemplateBuildError(location, `wrong type for URL parameter key: ${type} ` +
+                                         '(should be string)');
           }
           return value;
         });
@@ -348,8 +345,8 @@ export class TemplateBuilder {
             case 'string':
               return value;
             default:
-              throw new TemplateError(location, `wrong type for URL parameter value: ${type} ` +
-                                      '(should be number or string)');
+              throw new TemplateBuildError(location, 'wrong type for URL parameter value: ' +
+                                           `${type} (should be number or string)`);
           }
         });
 

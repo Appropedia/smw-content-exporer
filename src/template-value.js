@@ -1,4 +1,4 @@
-import { TemplateError } from './lexical-analyzer.js';
+import { IterateError, SubscriptAccessError, FunctionCallError } from './errors.js';
 
 //Instantiate a TemplateValue object from a possibly untrusted raw value
 export function create_value(raw_value) {
@@ -98,16 +98,16 @@ class TemplateValue {
     throw new Error(`Class ${this.constructor.name} has no type getter`);
   }
 
-  iterate(location, _var_count) {
-    throw new TemplateError(location, `cannot perform iteration on ${this.type} type`);
+  iterate(_var_count) {
+    throw new IterateError(`cannot perform iteration on ${this.type} type`);
   }
 
-  subscript_access(location, _rhs) {
-    throw new TemplateError(location, `cannot perform subscript access on ${this.type} type`);
+  subscript_access(_rhs) {
+    throw new SubscriptAccessError(`cannot perform subscript access on ${this.type} type`);
   }
 
-  call(location, _rhs) {
-    throw new TemplateError(location, `cannot perform calls on ${this.type} type`);
+  call(..._args) {
+    throw new FunctionCallError(`cannot perform calls on ${this.type} type`);
   }
 }
 
@@ -134,9 +134,9 @@ class ArrayValue extends TemplateValue {
     super(raw_value);
   }
 
-  *iterate(location, var_count) {
+  *iterate(var_count) {
     if (var_count != 1) {
-      throw new TemplateError(location, 'arrays can only be iterated with a single variable');
+      throw new IterateError('arrays can only be iterated with a single variable');
     }
 
     for (const item of this.raw_value) {
@@ -144,21 +144,21 @@ class ArrayValue extends TemplateValue {
     }
   }
 
-  subscript_access(location, rhs) {
+  subscript_access(rhs) {
     if (rhs.type !== 'number') {
-      throw new TemplateError(location, `cannot subscript arrays using ${rhs.type} values`);
+      throw new SubscriptAccessError(`cannot subscript arrays using ${rhs.type} values`);
     }
 
     if (!Number.isInteger(rhs.raw_value)) {
-      throw new TemplateError(location, 'cannot subscript arrays using non-integer indexes');
+      throw new SubscriptAccessError('cannot subscript arrays using non-integer indexes');
     }
 
     if (rhs.raw_value < 0) {
-      throw new TemplateError(location, 'cannot subscript arrays using negative indexes');
+      throw new SubscriptAccessError('cannot subscript arrays using negative indexes');
     }
 
     if (rhs.raw_value >= this.raw_value.length) {
-      throw new TemplateError(location, 'array subscript index exceeds array size');
+      throw new SubscriptAccessError('array subscript index exceeds array size');
     }
 
     return create_value_from_trusted(this.raw_value[rhs.raw_value]);
@@ -172,7 +172,7 @@ class DictionaryValue extends TemplateValue {
     super(raw_value);
   }
 
-  *iterate(location, var_count) {
+  *iterate(var_count) {
     switch (var_count) {
       case 1:
         for (const k of Object.keys(this.raw_value)) {
@@ -185,17 +185,17 @@ class DictionaryValue extends TemplateValue {
         }
         break;
       default:
-        throw new TemplateError(location, 'can only iterate dictionary with 1 or 2 variables');
+        throw new IterateError('can only iterate dictionary with 1 or 2 variables');
     }
   }
 
-  subscript_access(location, rhs) {
+  subscript_access(rhs) {
     if (rhs.type !== 'string') {
-      throw new TemplateError(location, `cannot subscript dictionaries using ${rhs.type} values`);
+      throw new SubscriptAccessError(`cannot subscript dictionaries using ${rhs.type} values`);
     }
 
     if (!Object.hasOwn(this.raw_value, rhs.raw_value)) {
-      throw new TemplateError(location, `dictionary has no "${rhs.raw_value}" entry`);
+      throw new SubscriptAccessError(`dictionary has no "${rhs.raw_value}" entry`);
     }
 
     return create_value_from_trusted(this.raw_value[rhs.raw_value]);
@@ -209,30 +209,8 @@ class FunctionValue extends TemplateValue {
     super(raw_value);
   }
 
-  call(location, args) {
-    //Call the function while performing error handling
-    try {
-      return this.raw_value(...args);
-    }
-    catch (error) {
-      if (error instanceof FunctionCallError) {
-        //FunctionCallError indicates an error was detected in the template logic, map it to a
-        //template error so location information is added
-        throw new TemplateError(location, error.message);
-      }
-      else {
-        //Treat any other error class as unexpected, and throw it as is
-        throw error;
-      }
-    }
-  }
-}
-
-//Custom error class for function calls
-export class FunctionCallError extends Error {
-  constructor(message) {
-    super(message);
-    this.name = 'FunctionCallError';
+  call(...args) {
+    return this.raw_value(...args);
   }
 }
 
