@@ -35,6 +35,9 @@ function nodes_from_value(location, value, quote_strings = false) {
     case 'string':
       //Strings are wrapped in text nodes directly
       return [ document.createTextNode(quote_strings? '"' + value + '"': value) ];
+    case 'boolean':
+      //Booleans are converted to strings and then wrapped in text nodes
+      return [ document.createTextNode(value? 'True': 'False') ];
     case 'object':
       if (Array.isArray(value)) {
         //Arrays are wrapped in unordered lists (ul) surrounded by brackets
@@ -70,7 +73,7 @@ function nodes_from_value(location, value, quote_strings = false) {
         throw new TemplateBuildError(location, `displaying of insecure objects is not allowed`);
       }
     default:
-      throw new Error(`Invalid type passed to function: ${typeof value}`);
+      throw new Error(`Cannot display value of unsupported type: ${typeof value}`);
   }
 }
 
@@ -190,9 +193,10 @@ export class TemplateBuilder {
               //order to disallow escape sequences leading to XSS
               attribute.value = attribute.value.replaceAll(token_repl_regex, (_match, id) => {
                 const { type, location, value } = this.#value_info_map.get(+id);
-                if (!['number', 'string'].includes(type)) {
-                  throw new TemplateBuildError(location, `wrong type for ${attribute.name} ` +
-                                               `attribute: ${type} (should be string or number)`);
+                if (!['number', 'string', 'bool'].includes(type)) {
+                  throw new TemplateBuildError(location,
+                                               `wrong type for ${attribute.name} attribute: ` +
+                                               `${type} (should be number, string or bool)`);
                 }
                 //Note: At the moment of writing there was no need of allowing types other than the
                 //basic ones, so they're restricted for added security. There's also a potential
@@ -226,19 +230,14 @@ export class TemplateBuilder {
   //Safely expand all untrusted value tokens in a DOM text node
   #expand_text_node(text_node) {
     const new_nodes = [];   //Holds the nodes that will replace the initial text node
-    let last_index = 0;     //Tracks the ending position of the current match
-    let prev_index = 0;     //Tracks the ending position of the previous match
+    let last_index = 0;     //Tracks the ending position of the previous match
 
     //Walk over the initial text node looking for untrusted value tokens
     for (const match of text_node.nodeValue.matchAll(token_repl_regex)) {
-      //Update the ending position
-      last_index = match.index + match[0].length;
-
       //Append/merge a text node for any text between tokens
-      if (match.index > prev_index) {
-        const node = document.createTextNode(text_node.nodeValue.slice(prev_index, match.index));
+      if (match.index > last_index) {
+        const node = document.createTextNode(text_node.nodeValue.slice(last_index, match.index));
         append_merge_nodes(new_nodes, node);
-        prev_index = last_index;
       }
 
       //Retrieve the untrusted value information
@@ -248,6 +247,7 @@ export class TemplateBuilder {
       switch (type) {
         case 'number':
         case 'string':
+        case 'bool':
           //These types are always allowed
           break;
         case 'array':
@@ -267,6 +267,9 @@ export class TemplateBuilder {
 
       //Create one or mode nodes from the current untrusted value, then append/merge them
       append_merge_nodes(new_nodes, ...nodes_from_value(location, value));
+
+      //Update the ending position
+      last_index = match.index + match[0].length;
     }
 
     //Append any trailing text as the last text node

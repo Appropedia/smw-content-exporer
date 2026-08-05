@@ -14,6 +14,11 @@ export class Parser {
     return this.#parse_template([]);
   }
 
+  //Words reserved for the template language
+  #reserved_words = [
+    'elif', 'else', 'end', 'False', 'for', 'if', 'in', 'include', 'not', 'set', 'True'
+  ];
+
   //The parsed language in Backus-Naur Form is as follows:
   //  <template> ::= <template_element> <template>
   //               | <empty>
@@ -24,11 +29,26 @@ export class Parser {
   //
   //  <statement_element> ::= <include_statement>
   //                       |  <set_statement>
+  //                       |  <if_statement>
   //                       |  <for_statement>
   //
   //  <include_statement> ::= {% include <expression> %}
   //
   //  <set_statement> ::= {% set <identifier> = <expression> %}
+  //
+  //  <if_statement> ::= <if_delimiter> <template> <elif_branches> <else_branch> <end_delimiter>
+  //
+  //  <elif_branches> ::= <elif_delimiter> <template> <elif_branches>
+  //                    | <empty>
+  //
+  //  <else_branch> ::= <else_delimiter> <template>
+  //                  | <empty>
+  //
+  //  <if_delimiter> ::= {% if <expression> %}
+  //
+  //  <elif_delimiter> ::= {% elif <expression> %}
+  //
+  //  <else_delimiter> ::= {% else %}
   //
   //  <for_statement> ::= <for_delimiter> <template> <end_delimiter>
   //
@@ -39,15 +59,20 @@ export class Parser {
   //
   //  <expression_element> ::= {{ <expression> }}
   //
-  //  <expression> ::= <postfix_expression>
+  //  <expression> ::= <comparison_expression>
   //
-  //  <postfix_expression> ::= <primary_expression>
-  //                         | <postfix_expression> [ <expression> ]
-  //                         | <postfix_expression> ( <argument_list> )
+  //  <comparison_expression> ::= <primary_expression>
+  //                            | <comparison_expression> in <primary_expression>
+  //                            | <comparison_expression> not in <primary_expression>
   //
-  //  <primary_expression> ::= <identifier>
-  //                         | <number_literal>
-  //                         | <string_literal>
+  //  <primary_expression> ::= <atom_expression>
+  //                         | <primary_expression> [ <expression> ]
+  //                         | <primary_expression> ( <argument_list> )
+  //
+  //  <atom_expression> ::= <string_literal>
+  //                      | <number_literal>
+  //                      | <bool_literal>
+  //                      | <identifier>
   //
   //  <argument_list> ::= <expression_list>
   //                    | <empty>
@@ -58,14 +83,18 @@ export class Parser {
   //  <string_literal> ::= ' <string_text> '
   //                     | " <string_text> "
   //
+  //  <bool_literal> ::= True
+  //                   | False
+  //
   //The following nonterminal symbols are described using natural language for convenience and are
   //implemented in the lexical analyzer where applicable:
   //  <empty>: Indicates the absence of a symbol
+  //
   //  <raw_text_element>: Any text that does not include any braces: {% %} {{ }}
   //
-  //  <identifier>: Any valid name that matches this regex: [a-zA-Z_][a-zA-Z_0-9]*
-  //
   //  <number_literal>: Any valid number
+  //
+  //  <identifier>: Any valid name that matches this regex: [a-zA-Z_][a-zA-Z_0-9]*
   //
   //  <string_text>: Any text that does not include the enclosing single or double quotes unless
   //                 escaped
@@ -138,6 +167,7 @@ export class Parser {
   //BNF:
   //  <statement_element> ::= <include_statement>
   //                       |  <set_statement>
+  //                       |  <if_statement>
   //                       |  <for_statement>
   #parse_statement_element(closing_tokens) {
     //This is a LL(2) parser, look at the second token that follows to check which statement comes
@@ -149,6 +179,8 @@ export class Parser {
         return this.#parse_include_statement();
       case 'set':
         return this.#parse_set_statement();
+      case 'if':
+        return this.#parse_if_statement();
       case 'for':
         return this.#parse_for_statement();
       default:
@@ -160,6 +192,8 @@ export class Parser {
         else {
           //Not a valid closing token, check for known keywords
           switch (token.value) {
+            case 'elif':
+            case 'else':
             case 'end':
               throw new ParseError(token.location, `stray "${token.value}" found`);
             default:
@@ -169,7 +203,7 @@ export class Parser {
     }
   }
 
-  //Parse a <include_statement> nonterminal symbol
+  //Parse an <include_statement> nonterminal symbol
   //BNF:
   //  <include_statement> ::= {% include <expression> %}
   #parse_include_statement() {
@@ -202,6 +236,98 @@ export class Parser {
       identifier: identifier,
       expression: expression,
     };
+  }
+
+  //Parse an <if_statement> nonterminal symbol
+  //BNF:
+  //  <if_statement> ::= <if_delimiter> <template> <elif_branches> <else_branch> <end_delimiter>
+  #parse_if_statement() {
+    const branches = [
+      {
+        location: this.#lexer.peek().location,
+        condition: this.#parse_if_delimiter(),
+        body: this.#parse_template(['elif', 'else', 'end']),
+      },
+      ...this.#parse_elif_branches(),
+      ...this.#parse_else_branch(),
+    ];
+    this.#parse_end_delimiter();
+
+    return {
+      type: 'if_statement',
+      branches: branches,
+    };
+  }
+
+  //Parse an <elif_branches> nonterminal symbol
+  //BNF:
+  //  <elif_branches> ::= <elif_delimiter> <template> <elif_branches>
+  //                    | <empty>
+  #parse_elif_branches() {
+    const branches = [];
+
+    //This is a LL(2) parser, look at the two tokens that follow for additional elif tokens on each
+    //iteration, and keep appending them until no more are found
+    let token;
+    while ((token = this.#lexer.peek(0))?.value === '{%' && this.#lexer.peek(1)?.value === 'elif') {
+      branches.push({
+        location: token.location,
+        condition: this.#parse_elif_delimiter(),
+        body: this.#parse_template(['elif', 'else', 'end']),
+      });
+    }
+
+    return branches;
+  }
+
+  //Parse an <else_branch> nonterminal symbol
+  //BNF:
+  //  <else_branch> ::= <else_delimiter> <template>
+  //                  | <empty>
+  #parse_else_branch() {
+    const branch = [];
+
+    if (this.#lexer.peek(0)?.value === '{%' && this.#lexer.peek(1)?.value === 'else') {
+      this.#parse_else_delimiter();
+      branch.push({
+        body: this.#parse_template(['end']),
+      });
+    }
+
+    return branch;
+  }
+
+  //Parse an <if_delimiter> nonterminal symbol
+  //BNF:
+  //  <if_delimiter> ::= {% if <expression> %}
+  #parse_if_delimiter() {
+    this.#lexer.consume('{%');
+    this.#lexer.consume('if');
+    const condition = this.#parse_expression();
+    this.#lexer.consume('%}');
+
+    return condition;
+  }
+
+  //Parse an <elif_delimiter> nonterminal symbol
+  //BNF:
+  //  <elif_delimiter> ::= {% elif <expression> %}
+  #parse_elif_delimiter() {
+    this.#lexer.consume('{%');
+    this.#lexer.consume('elif');
+    const condition = this.#parse_expression();
+    this.#lexer.consume('%}');
+
+    return condition;
+  }
+
+  //Parse an <else_delimiter> nonterminal symbol
+  //BNF:
+  //  <else_delimiter> ::= {% else %}
+  #parse_else_delimiter() {
+    this.#lexer.consume('{%');
+    this.#lexer.consume('else');
+    this.#lexer.consume('%}');
   }
 
   //Parse a <for_statement> nonterminal symbol
@@ -276,22 +402,69 @@ export class Parser {
 
   //Parse an <expression> nonterminal symbol
   //BNF:
-  //  <expression> ::= <postfix_expression>
+  //  <expression> ::= <comparison_expression>
   #parse_expression() {
-    return this.#parse_postfix_expression();
+    return this.#parse_comparison_expression();
   }
 
-  //Parse a <postfix_expression> nonterminal symbol
+  //Parse a <comparison_expression> nonterminal symbol
   //BNF:
-  //  <postfix_expression> ::= <primary_expression>
-  //                         | <postfix_expression> [ <expression> ]
-  //                         | <postfix_expression> ( <argument_list> )
-  #parse_postfix_expression() {
+  //  <comparison_expression> ::= <primary_expression>
+  //                            | <comparison_expression> in <primary_expression>
+  //                            | <comparison_expression> not in <primary_expression>
+  #parse_comparison_expression() {
     //Start by parsing the first left-hand subexpression as a primary expression
     let result = this.#parse_primary_expression();
 
+    //Handle left-to-right associativity by iterating until no more infix operators are found; each
+    //comparison expression wraps its previous left-hand comparison expression in its result,
+    //enforcing the correct evaluation order
+    let infix_operator_token;
+    loop: while ((infix_operator_token = this.#lexer.peek()) !== undefined) {
+      switch (infix_operator_token.value) {
+        case 'in': {
+          this.#lexer.consume();
+          result = {
+            type: 'comparison_expression',
+            location: infix_operator_token.location,
+            operator: 'in',
+            lhs: result,
+            rhs: this.#parse_primary_expression(),
+          };
+          break;
+        }
+        case 'not': {
+          this.#lexer.consume();
+          this.#lexer.consume('in');
+          result = {
+            type: 'comparison_expression',
+            location: infix_operator_token.location,
+            operator: 'not in',
+            lhs: result,
+            rhs: this.#parse_primary_expression(),
+          };
+          break;
+        }
+        default: {
+          break loop;
+        }
+      }
+    }
+
+    return result;
+  }
+
+  //Parse a <primary_expression> nonterminal symbol
+  //BNF:
+  //  <primary_expression> ::= <atom_expression>
+  //                         | <primary_expression> [ <expression> ]
+  //                         | <primary_expression> ( <argument_list> )
+  #parse_primary_expression() {
+    //Start by parsing the first left-hand subexpression as an atom expression
+    let result = this.#parse_atom_expression();
+
     //Handle left-to-right associativity by iterating until no more postfix operators are found;
-    //each postfix expression wraps its previous left-hand postfix expression in its result,
+    //each primary expression wraps its previous left-hand primary expression in its result,
     //enforcing the correct evaluation order
     let postfix_operator_token;
     loop: while ((postfix_operator_token = this.#lexer.peek()) !== undefined) {
@@ -299,7 +472,7 @@ export class Parser {
         case '[':
           this.#lexer.consume();
           result = {
-            type: 'postfix_expression',
+            type: 'primary_expression',
             location: postfix_operator_token.location,
             operator: '[]',
             lhs: result,
@@ -310,7 +483,7 @@ export class Parser {
         case '(':
           this.#lexer.consume();
           result = {
-            type: 'postfix_expression',
+            type: 'primary_expression',
             location: postfix_operator_token.location,
             operator: '()',
             lhs: result,
@@ -326,19 +499,23 @@ export class Parser {
     return result;
   }
 
-  //Parse a <primary_expression> nonterminal symbol
+  //Parse an <atom_expression> nonterminal symbol
   //BNF:
-  //  <primary_expression> ::= <identifier>
-  //                         | <number_literal>
-  //                         | <string_literal>
-  #parse_primary_expression() {
-    const token = this.#lexer.peek(0, 'primary expression');
+  //  <atom_expression> ::= <string_literal>
+  //                      | <number_literal>
+  //                      | <bool_literal>
+  //                      | <identifier>
+  #parse_atom_expression() {
+    const token = this.#lexer.peek(0, 'atom expression');
 
     if (['\'', '"'].includes(token.value)) {
       return this.#parse_string_literal();
     }
     else if (/^[0-9.]/.test(token.value)) {
       return this.#parse_number_literal();
+    }
+    else if (['True', 'False'].includes(token.value)) {
+      return this.#parse_bool_literal();
     }
     else {
       return this.#parse_identifier();
@@ -404,23 +581,31 @@ export class Parser {
     };
   }
 
-  //Parse an <identifier> nonterminal symbol
-  #parse_identifier() {
-    const token = this.#lexer.peek(0, 'identifier');
+  //Parse a <bool_literal> nonterminal symbol
+  //BNF:
+  //  <bool_literal> ::= True
+  //                   | False
+  #parse_bool_literal() {
+    const token = this.#lexer.peek(0, 'bool literal');
 
-    //Make sure the identifier uses the correct characters
-    if (!/^[a-zA-Z_][a-zA-Z_0-9]*$/.test(token.value)) {
-      throw new ParseError(token.location, `invalid identifier: "${token.value}" - must only ` +
-                           'contain letters, numbers and underscores and cannot start with a ' +
-                           'number');
+    let value;
+    switch (token.value) {
+      case 'True':
+        this.#lexer.consume();
+        value = true;
+        break;
+      case 'False':
+        this.#lexer.consume();
+        value = false;
+        break;
+      default:
+        throw new ParseError(token.location,
+                             `expected bool literal but found "${token.value}" instead`);
     }
 
-    this.#lexer.consume();
-
     return {
-      type: 'identifier',
-      location: token.location,
-      name: token.value,
+      type: 'bool_literal',
+      value: value,
     };
   }
 
@@ -432,6 +617,31 @@ export class Parser {
     return {
       type: 'number_literal',
       value: Number(token.value),
+    };
+  }
+
+  //Parse an <identifier> nonterminal symbol
+  #parse_identifier() {
+    const token = this.#lexer.peek(0, 'identifier');
+
+    //Make sure the identifier uses the correct characters
+    if (!/^[a-zA-Z_][a-zA-Z_0-9]*$/.test(token.value)) {
+      throw new ParseError(token.location, `invalid identifier: "${token.value}" - must only ` +
+                           'contain letters, numbers and underscores and cannot start with a ' +
+                           'number');
+    }
+
+    //Also make sure the identifier is not a reseved word
+    if (this.#reserved_words.includes(token.value)) {
+      throw new ParseError(token.location, `unexpected reserved word: "${token.value}"`);
+    }
+
+    this.#lexer.consume();
+
+    return {
+      type: 'identifier',
+      location: token.location,
+      name: token.value,
     };
   }
 }

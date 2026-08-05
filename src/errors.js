@@ -56,6 +56,13 @@ export class IncludeError extends EvaluationError {
   }
 }
 
+export class TypeMismatchError extends EvaluationError {
+  constructor(message) {
+    super(`type mismatch error: ${message}`);
+    this.name = 'TypeMismatchError';
+  }
+}
+
 export class IterateError extends EvaluationError {
   constructor(message) {
     super(`iterate error: ${message}`);

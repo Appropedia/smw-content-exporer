@@ -21,8 +21,8 @@ export const itemgetter = builtin_function(
     //the required items
     return builtin_function(
       [keys[0].type === 'number'? 'array': 'dictionary'],
-      keys.length === 1? (aggregate) => aggregate.subscript_access(keys[0]):
-                         (aggregate) => keys.map(k => aggregate.subscript_access(k).raw_value)
+      keys.length === 1? (aggregate) => aggregate.operator_subscription(keys[0]):
+                         (aggregate) => keys.map(k => aggregate.operator_subscription(k).raw_value)
     );
   }
 );
@@ -31,7 +31,7 @@ export const itemgetter = builtin_function(
 export const map = builtin_function(
   ['function', 'array'],
   (callback, iterable) => {
-    return [...iterable.iterate(1).map(v => callback.call(v).raw_value)];
+    return [...iterable.iterate(1).map(v => callback.operator_call(v).raw_value)];
   }
 );
 

@@ -14,6 +14,7 @@ export async function get(url, as_json = false) {
 //Concurrently gather all values specified in a view definition from internal and external sources
 export async function collect_globals(view) {
   const globals = { ...builtins };
+  const json_requests = new Map();
   const search_requests = new Map();
   const printout_value_sets = {};
 
@@ -22,6 +23,10 @@ export async function collect_globals(view) {
     if (Object.hasOwn(descriptor, 'value')) {
       //The global value is defined directly, use it as is
       globals[name] = descriptor.value;
+    }
+    else if (Object.hasOwn(descriptor, 'json_file')) {
+      //The global value is defined in a JSON file, download and use that file
+      json_requests.set(name, get(descriptor.json_file, true));
     }
     else if (Object.hasOwn(descriptor, 'semantic_search')) {
       //The global value describes a semantic search; add it to the search requests
@@ -33,8 +38,17 @@ export async function collect_globals(view) {
     }
   }
 
-  //Search requests are being performed in parallel in the background at this point; wait for them
-  const search_results = await Promise.all(search_requests.values());
+  //JSON file and search requests are being performed in parallel in the background at this point;
+  //wait for all of them
+  const [json_data, search_results] = await Promise.all([
+    Promise.all(json_requests.values()),
+    Promise.all(search_requests.values()),
+  ]);
+
+  //Consolidate all JSON file data into the global namespace
+  json_requests.keys().forEach((name, index) => {
+    globals[name] = json_data[index];
+  });
 
   //Consolidate all search results into the global namespace while also keeping a reference to the
   //print request metadata

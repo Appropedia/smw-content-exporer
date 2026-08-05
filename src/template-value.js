@@ -1,33 +1,45 @@
-import { IterateError, SubscriptAccessError, FunctionCallError } from './errors.js';
+import { TypeMismatchError, IterateError, SubscriptAccessError, FunctionCallError }
+from './errors.js';
 
 //Instantiate a TemplateValue object from a possibly untrusted raw value
 export function create_value(raw_value) {
   //Make sure the provided type is supported
+  verify_supported_types(raw_value);
+
+  //Create a new TemplateValue object from the raw value, but make sure to convert all non
+  //null-prototype objects to null-prototype ones to protect against prototype pollution attacks
+  return create_value_from_trusted(strip_prototypes(raw_value));
+}
+
+//Verfify that a given raw value is of one of the supported types or is composed of them
+function verify_supported_types(raw_value) {
   switch (typeof raw_value) {
     case 'number':
     case 'string':
+    case 'boolean':
     case 'function':
       //All types above are supported
       break;
     case 'object':
       //Arrays are supported
       if (Array.isArray(raw_value)) {
+        //Verify array contents recursively
+        raw_value.forEach(v => verify_supported_types(v));
         break;
       }
 
       //Objects are supported but only if they're plain ones
       if (raw_value !== null && Object.getPrototypeOf(raw_value) === Object.prototype) {
+        //Verify object contents recursively
+        Object.values(raw_value).forEach(v => verify_supported_types(v));
         break;
       }
 
-      throw new Error(`Unsupported raw value object: ${raw_value}`);
+      throw new Error('Raw value object with unsupported prototype: ' +
+                      `${Object.getPrototypeOf(raw_value)}`);
     default:
       throw new Error(`Unsupported raw value type: ${typeof raw_value}`);
   }
-
-  //Create a new TemplateValue object from the raw value, but make sure to convert all non
-  //null-prototype objects to null-prototype ones to protect against prototype pollution attacks
-  return create_value_from_trusted(strip_prototypes(raw_value));
 }
 
 //Instantiate a TemplateValue object from a trusted raw value
@@ -38,6 +50,8 @@ function create_value_from_trusted(raw_value) {
       return new NumberValue(raw_value);
     case 'string':
       return new StringValue(raw_value);
+    case 'boolean':
+      return new BoolValue(raw_value);
     case 'object':
       if (Array.isArray(raw_value)) {
         return new ArrayValue(raw_value);
@@ -99,15 +113,23 @@ class TemplateValue {
   }
 
   iterate(_var_count) {
-    throw new IterateError(`cannot perform iteration on ${this.type} type`);
+    throw new TypeMismatchError(`cannot perform iteration on ${this.type} type`);
   }
 
-  subscript_access(_rhs) {
-    throw new SubscriptAccessError(`cannot perform subscript access on ${this.type} type`);
+  operator_subscription(_rhs) {
+    throw new TypeMismatchError(`cannot perform subscription on ${this.type} type`);
   }
 
-  call(..._args) {
-    throw new FunctionCallError(`cannot perform calls on ${this.type} type`);
+  operator_in(_lhs) {
+    throw new TypeMismatchError(`cannot perform membership test inside of ${this.type} type`);
+  }
+
+  operator_not_in(_lhs) {
+    throw new TypeMismatchError(`cannot perform membership test inside of ${this.type} type`);
+  }
+
+  operator_call(..._args) {
+    throw new TypeMismatchError(`cannot perform calls on ${this.type} type`);
   }
 }
 
@@ -121,6 +143,14 @@ class NumberValue extends TemplateValue {
 
 class StringValue extends TemplateValue {
   get type() { return 'string'; }
+
+  constructor(raw_value) {
+    super(raw_value);
+  }
+}
+
+class BoolValue extends TemplateValue {
+  get type() { return 'bool'; }
 
   constructor(raw_value) {
     super(raw_value);
@@ -144,9 +174,9 @@ class ArrayValue extends TemplateValue {
     }
   }
 
-  subscript_access(rhs) {
+  operator_subscription(rhs) {
     if (rhs.type !== 'number') {
-      throw new SubscriptAccessError(`cannot subscript arrays using ${rhs.type} values`);
+      throw new TypeMismatchError(`cannot subscript arrays using ${rhs.type} values`);
     }
 
     if (!Number.isInteger(rhs.raw_value)) {
@@ -158,7 +188,7 @@ class ArrayValue extends TemplateValue {
     }
 
     if (rhs.raw_value >= this.raw_value.length) {
-      throw new SubscriptAccessError('array subscript index exceeds array size');
+      throw new SubscriptAccessError('array subscription index exceeds array size');
     }
 
     return create_value_from_trusted(this.raw_value[rhs.raw_value]);
@@ -189,9 +219,9 @@ class DictionaryValue extends TemplateValue {
     }
   }
 
-  subscript_access(rhs) {
+  operator_subscription(rhs) {
     if (rhs.type !== 'string') {
-      throw new SubscriptAccessError(`cannot subscript dictionaries using ${rhs.type} values`);
+      throw new TypeMismatchError(`cannot subscript dictionaries using ${rhs.type} values`);
     }
 
     if (!Object.hasOwn(this.raw_value, rhs.raw_value)) {
@@ -199,6 +229,24 @@ class DictionaryValue extends TemplateValue {
     }
 
     return create_value_from_trusted(this.raw_value[rhs.raw_value]);
+  }
+
+  operator_in(lhs) {
+    if (lhs.type != 'string') {
+      throw new TypeMismatchError(`Cannot perform membership test of ${lhs.type} type inside of ` +
+                                  'dictionary type');
+    }
+
+    return create_value_from_trusted(Object.hasOwn(this.raw_value, lhs.raw_value));
+  }
+
+  operator_not_in(lhs) {
+    if (lhs.type != 'string') {
+      throw new TypeMismatchError(`Cannot perform membership test of ${lhs.type} type inside of ` +
+                                  'dictionary type');
+    }
+
+    return create_value_from_trusted(!Object.hasOwn(this.raw_value, lhs.raw_value));
   }
 }
 
@@ -209,7 +257,7 @@ class FunctionValue extends TemplateValue {
     super(raw_value);
   }
 
-  call(...args) {
+  operator_call(...args) {
     return this.raw_value(...args);
   }
 }
@@ -338,7 +386,7 @@ export function builtin_function(param_descriptors, fn) {
     call_args.slice(0, param_types.length).forEach((arg, index) => {
       if (!param_types[index].includes(arg.type)) {
         const formatter = new Intl.ListFormat('en-GB', { style: 'long', type: 'disjunction' });
-        throw new FunctionCallError(`wrong type for parameter #${index + 1} in function call: ` +
+        throw new TypeMismatchError(`wrong type for parameter #${index + 1} in function call: ` +
                                     `${arg.type} (should be ` +
                                     `${formatter.format(param_types[index])})`);
       }

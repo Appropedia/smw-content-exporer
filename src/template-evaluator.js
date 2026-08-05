@@ -1,4 +1,5 @@
-import { TemplateError, EvaluationError, ScopeError, IncludeError } from './errors.js';
+import { TemplateError, EvaluationError, ScopeError, IncludeError, TypeMismatchError }
+from './errors.js';
 import { create_value } from './template-value.js';
 import { Parser } from './parser.js';
 import { TemplateBuilder } from './template-builder.js';
@@ -66,7 +67,7 @@ const evaluator = {
 
     //Make sure the unit name was correctly evaluated to a string
     if (expr_type !== 'string') {
-      throw new IncludeError(`cannot include units using ${expr_type} values`);
+      throw new TypeMismatchError(`cannot include units using ${expr_type} type values`);
     }
 
     //Make sure the template is defined in the view
@@ -101,6 +102,41 @@ const evaluator = {
     scope.set(statement.identifier.name, value);
 
     return '';  //This is an internal logic operation with no output
+  },
+
+  //Evaluate an <if_statement> AST object
+  if_statement(statement, scope) {
+    //Iterate through the if statement branches until one is executed (if any)
+    for (const branch of statement.branches) {
+      //Update the statement location for each branch so debugging information is more accurate in
+      //case something goes wrong
+      statement.location = branch.location;
+
+      //Check whether the branch has a condition (e.g. is not an "else" branch)
+      if (Object.hasOwn(branch, 'condition')) {
+        //The branch has a condition, evaluate it now
+        const result = evaluate(branch.condition, scope);
+
+        //Make sure the condition evaluates to a bool value
+        if (result.type !== 'bool') {
+          throw new TypeMismatchError(`cannot evaluate if statement using ${result.type} type ` +
+                                      'values');
+        }
+
+        //Skip this branch if the condition is not satisfied
+        if (!result.raw_value) {
+          continue;
+        }
+      }
+
+      //The condition is satisfied or there's no condition, proceed to evaluate the branch body and
+      //return immediately to discard any other potential branches
+      const child_scope = new Scope(scope);
+      return evaluate(branch.body, child_scope);
+    }
+
+    //No branch executed (no condition satisfied and no "else" branch), produce no output
+    return '';
   },
 
   //Evaluate a <for_statement> AST object
@@ -144,19 +180,30 @@ const evaluator = {
                                                      evaluate(element.expression, scope));
   },
 
-  //Evaluate a <postfix_expression> AST object
-  postfix_expression(expression, scope) {
-    let lhs;
+  comparison_expression(expression, scope) {
+    const lhs = evaluate(expression.lhs, scope);
+    const rhs = evaluate(expression.rhs, scope);
+    switch (expression.operator) {
+      case 'in':
+        return rhs.operator_in(lhs);
+      case 'not in':
+        return rhs.operator_not_in(lhs);
+      default:
+        throw new EvaluationError(`operator "${expression.operator}" not implemented`);
+    }
+  },
+
+  //Evaluate a <primary_expression> AST object
+  primary_expression(expression, scope) {
+    const lhs = evaluate(expression.lhs, scope);
     let rhs;
     switch (expression.operator) {
       case '[]':
-        lhs = evaluate(expression.lhs, scope);
         rhs = evaluate(expression.rhs, scope);
-        return lhs.subscript_access(rhs);
+        return lhs.operator_subscription(rhs);
       case '()':
-        lhs = evaluate(expression.lhs, scope);
         rhs = expression.rhs.map(v => evaluate(v, scope));
-        return lhs.call(...rhs);
+        return lhs.operator_call(...rhs);
       default:
         throw new EvaluationError(`operator "${expression.operator}" not implemented`);
     }
@@ -167,15 +214,20 @@ const evaluator = {
     return create_value(literal.value);
   },
 
-  //Evaluate an <identifier> AST object
-  identifier(identifier, scope) {
-    return scope.get(identifier.name);
+  //Evaluate a a <bool_literal> AST object
+  bool_literal(literal, _scope) {
+    return create_value(literal.value);
   },
 
   //Evaluate a <number_literal> AST object
   number_literal(literal, _scope) {
     return create_value(literal.value);
-  }
+  },
+
+  //Evaluate an <identifier> AST object
+  identifier(identifier, scope) {
+    return scope.get(identifier.name);
+  },
 };
 
 //Evaluate an AST object using the given scope
